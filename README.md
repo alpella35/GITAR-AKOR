@@ -27,17 +27,16 @@ Ayrı bir backend servisi yok; scraping ve yönetim işleri **Admin Panel** + **
    npm run dev
    ```
 
-## “Failed to send a request to the Edge Function” için hızlı çözüm
-Admin panelde **Function Health Check** butonuna basın ve çıkan mesaja göre ilerleyin:
-- `FunctionsFetchError`: endpointe erişilemiyor (yanlış URL/project ref/deploy yok)
-- `FunctionsHttpError`: function çalıştı ama içeride hata verdi (Functions logs)
-- `FunctionsRelayError`: function adı/auth/relay sorunu
+## HealthCheck 400 `Unexpected end of JSON input` çözümü
+Bu hata, function POST çağrısında **boş body** geldiğinde oluşur.
+Yeni sürümde bu durum düzeltildi (`req.text()` + boşsa `{}`).
+Mutlaka function'ı yeniden deploy edin:
 
-Ek CLI kontrolü:
 ```bash
-supabase functions list
-supabase functions logs scrape-chord-page
+supabase functions deploy scrape-chord-page --no-verify-jwt
 ```
+
+Ardından Admin Panel > **Function Health Check** ile tekrar deneyin.
 
 ## Admin Panel
 - Giriş: `admin` / `19871987` (hardcoded)

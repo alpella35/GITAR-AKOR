@@ -31,8 +31,9 @@ Deno.serve(async (req) => {
   }
 
   try {
-    const body = await req.json().catch(() => ({}));
-    const { targetUrl }: Payload = body;
+    const rawBody = await req.text();
+    const body: Payload = rawBody ? JSON.parse(rawBody) : {};
+    const { targetUrl } = body;
     if (!targetUrl) throw new Error('targetUrl zorunlu');
 
     const res = await fetch(targetUrl, {
