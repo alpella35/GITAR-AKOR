@@ -27,15 +27,21 @@ Ayrı bir backend servisi yok; scraping ve yönetim işleri **Admin Panel** + **
    npm run dev
    ```
 
-## “Failed to send a request to the Edge Function” hatası için kontrol listesi
-- Function deploy edildi mi?
-- Projede `VITE_SUPABASE_URL` doğru mu?
-- Function adı birebir `scrape-chord-page` mi?
-- Supabase dashboard’da function loglarında CORS/timeout hatası var mı?
-- Hedef site bot koruması nedeniyle isteği engelliyor mu? (bazı siteler 403 dönebilir)
+## “Failed to send a request to the Edge Function” için hızlı çözüm
+Admin panelde **Function Health Check** butonuna basın ve çıkan mesaja göre ilerleyin:
+- `FunctionsFetchError`: endpointe erişilemiyor (yanlış URL/project ref/deploy yok)
+- `FunctionsHttpError`: function çalıştı ama içeride hata verdi (Functions logs)
+- `FunctionsRelayError`: function adı/auth/relay sorunu
+
+Ek CLI kontrolü:
+```bash
+supabase functions list
+supabase functions logs scrape-chord-page
+```
 
 ## Admin Panel
 - Giriş: `admin` / `19871987` (hardcoded)
 - Özellikler:
+  - Function Health Check
   - URL verip `scrape-chord-page` çağırma
   - Hızlı örnek şarkı/akor kaydı ekleme
