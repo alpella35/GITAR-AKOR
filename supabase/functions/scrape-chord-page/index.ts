@@ -20,9 +20,43 @@ const slugify = (input: string) =>
     .replace(/[^a-z0-9]+/g, '-')
     .replace(/(^-|-$)/g, '');
 
+const parseAkorlarPage = ($: ReturnType<typeof load>) => {
+  const h1Text = $('.page-title-h1').first().text().trim() || $('h1').first().text().trim();
+  const titleTag = $('title').text().trim();
+
+  let artist = $('.page-title-h1 a').first().text().trim();
+  let title = '';
+
+  const m = h1Text.match(/^(.*?)\s*-\s*(.*?)\s*Akor\s*$/i);
+  if (m) {
+    artist = artist || m[1].trim();
+    title = m[2].trim();
+  }
+
+  if (!title && titleTag) {
+    const mt = titleTag.match(/^(.*?)\s*-\s*(.*?)\s*-\s*Akor/i);
+    if (mt) {
+      artist = artist || mt[1].trim();
+      title = mt[2].trim();
+    }
+  }
+
+  const chordBlock =
+    $('pre#key.chords').first().text().trim() ||
+    $('pre.chords[data-key]').first().text().trim() ||
+    $('pre.chords').first().text().trim() ||
+    $('pre').first().text().trim();
+
+  const originalKey =
+    $('#default-key').attr('data-key') ||
+    $('#select-key option[selected="selected"]').text().match(/Orjinal Ton:\s*([A-G][#b]?)/i)?.[1] ||
+    null;
+
+  return { artist: artist || 'Bilinmeyen Sanatçı', title, chordBlock, originalKey };
+};
+
 Deno.serve(async (req) => {
   if (req.method === 'OPTIONS') return new Response('ok', { headers: corsHeaders });
-
   if (req.method === 'GET') {
     return new Response(JSON.stringify({ ok: true, message: 'scrape-chord-page alive' }), {
       headers: { ...corsHeaders, 'Content-Type': 'application/json' },
@@ -40,49 +74,49 @@ Deno.serve(async (req) => {
         throw new Error('Geçersiz JSON body');
       }
     }
+
     const { targetUrl } = body;
     if (!targetUrl) throw new Error('targetUrl zorunlu');
 
     const res = await fetch(targetUrl, {
       headers: {
-        'User-Agent': 'Mozilla/5.0 (compatible; AkorBot/1.0; +https://example.com/bot)',
+        'User-Agent': 'Mozilla/5.0 (compatible; AkorBot/1.0)',
         Accept: 'text/html,application/xhtml+xml',
       },
     });
-
     if (!res.ok) throw new Error(`Hedef sayfa alınamadı (${res.status})`);
+
     const html = await res.text();
     const $ = load(html);
+    const parsed = parseAkorlarPage($);
 
-    const title = $('h1').first().text().trim() || $('title').text().trim();
-    const artist = $('.sanatci a, .artist a, .artist, .metadata .artist').first().text().trim() || 'Bilinmeyen Sanatçı';
-    const chordBlock = $('pre').first().text().trim() || $('.chords, .lyric, .lyrics, .content-text, article').first().text().trim();
-
-    if (!title || !chordBlock) throw new Error('Sayfadan başlık veya akor bloğu okunamadı');
+    if (!parsed.title || !parsed.chordBlock) {
+      throw new Error('Akor/söz bloğu veya başlık alınamadı. Seçiciler hedef sayfaya uymuyor olabilir.');
+    }
 
     const supabase = createClient(Deno.env.get('SUPABASE_URL')!, Deno.env.get('SUPABASE_SERVICE_ROLE_KEY')!);
-    const artistSlug = slugify(artist);
-    const songSlug = slugify(title);
+    const artistSlug = slugify(parsed.artist);
+    const songSlug = slugify(parsed.title);
 
     const { data: existingArtist } = await supabase.from('artists').select('id').eq('slug', artistSlug).maybeSingle();
     let artistId = existingArtist?.id;
     if (!artistId) {
-      const { data, error } = await supabase.from('artists').insert({ name: artist, slug: artistSlug }).select('id').single();
+      const { data, error } = await supabase.from('artists').insert({ name: parsed.artist, slug: artistSlug }).select('id').single();
       if (error) throw error;
       artistId = data.id;
     }
 
     const { data: song, error: songErr } = await supabase
       .from('songs')
-      .insert({ artist_id: artistId, title, slug: songSlug })
+      .insert({ artist_id: artistId, title: parsed.title, slug: songSlug, original_key: parsed.originalKey })
       .select('id')
       .single();
     if (songErr) throw songErr;
 
-    const { error: chordErr } = await supabase.from('chords').insert({ song_id: song.id, content: chordBlock });
+    const { error: chordErr } = await supabase.from('chords').insert({ song_id: song.id, content: parsed.chordBlock });
     if (chordErr) throw chordErr;
 
-    return new Response(JSON.stringify({ ok: true, songId: song.id, artist, title }), {
+    return new Response(JSON.stringify({ ok: true, songId: song.id, artist: parsed.artist, title: parsed.title }), {
       headers: { ...corsHeaders, 'Content-Type': 'application/json' },
       status: 200,
     });
