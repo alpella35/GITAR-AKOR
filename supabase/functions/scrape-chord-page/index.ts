@@ -32,7 +32,14 @@ Deno.serve(async (req) => {
 
   try {
     const rawBody = await req.text();
-    const body: Payload = rawBody ? JSON.parse(rawBody) : {};
+    let body: Payload = {};
+    if (rawBody && rawBody.trim().length > 0) {
+      try {
+        body = JSON.parse(rawBody);
+      } catch {
+        throw new Error('Geçersiz JSON body');
+      }
+    }
     const { targetUrl } = body;
     if (!targetUrl) throw new Error('targetUrl zorunlu');
 
