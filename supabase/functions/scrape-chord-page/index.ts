@@ -1,5 +1,3 @@
-// Supabase Edge Function: scrape-chord-page
-// Deploy: supabase functions deploy scrape-chord-page --no-verify-jwt
 import { load } from 'npm:cheerio@1.0.0-rc.12';
 import { createClient } from 'npm:@supabase/supabase-js@2';
 
@@ -25,8 +23,16 @@ const slugify = (input: string) =>
 Deno.serve(async (req) => {
   if (req.method === 'OPTIONS') return new Response('ok', { headers: corsHeaders });
 
+  if (req.method === 'GET') {
+    return new Response(JSON.stringify({ ok: true, message: 'scrape-chord-page alive' }), {
+      headers: { ...corsHeaders, 'Content-Type': 'application/json' },
+      status: 200,
+    });
+  }
+
   try {
-    const { targetUrl }: Payload = await req.json();
+    const body = await req.json().catch(() => ({}));
+    const { targetUrl }: Payload = body;
     if (!targetUrl) throw new Error('targetUrl zorunlu');
 
     const res = await fetch(targetUrl, {
@@ -41,37 +47,19 @@ Deno.serve(async (req) => {
     const $ = load(html);
 
     const title = $('h1').first().text().trim() || $('title').text().trim();
-    const artist =
-      $('.sanatci a, .artist a, .artist, .metadata .artist').first().text().trim() ||
-      (title.includes('-') ? title.split('-')[0].trim() : 'Bilinmeyen Sanatçı');
-
-    const chordBlock =
-      $('pre').first().text().trim() ||
-      $('.chords, .lyric, .lyrics, .content-text, article').first().text().trim();
+    const artist = $('.sanatci a, .artist a, .artist, .metadata .artist').first().text().trim() || 'Bilinmeyen Sanatçı';
+    const chordBlock = $('pre').first().text().trim() || $('.chords, .lyric, .lyrics, .content-text, article').first().text().trim();
 
     if (!title || !chordBlock) throw new Error('Sayfadan başlık veya akor bloğu okunamadı');
 
-    const supabase = createClient(
-      Deno.env.get('SUPABASE_URL')!,
-      Deno.env.get('SUPABASE_SERVICE_ROLE_KEY')!
-    );
-
+    const supabase = createClient(Deno.env.get('SUPABASE_URL')!, Deno.env.get('SUPABASE_SERVICE_ROLE_KEY')!);
     const artistSlug = slugify(artist);
     const songSlug = slugify(title);
 
-    const { data: existingArtist } = await supabase
-      .from('artists')
-      .select('id')
-      .eq('slug', artistSlug)
-      .maybeSingle();
-
+    const { data: existingArtist } = await supabase.from('artists').select('id').eq('slug', artistSlug).maybeSingle();
     let artistId = existingArtist?.id;
     if (!artistId) {
-      const { data, error } = await supabase
-        .from('artists')
-        .insert({ name: artist, slug: artistSlug })
-        .select('id')
-        .single();
+      const { data, error } = await supabase.from('artists').insert({ name: artist, slug: artistSlug }).select('id').single();
       if (error) throw error;
       artistId = data.id;
     }
@@ -83,9 +71,7 @@ Deno.serve(async (req) => {
       .single();
     if (songErr) throw songErr;
 
-    const { error: chordErr } = await supabase
-      .from('chords')
-      .insert({ song_id: song.id, content: chordBlock });
+    const { error: chordErr } = await supabase.from('chords').insert({ song_id: song.id, content: chordBlock });
     if (chordErr) throw chordErr;
 
     return new Response(JSON.stringify({ ok: true, songId: song.id, artist, title }), {
